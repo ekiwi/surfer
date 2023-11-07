@@ -4,3 +4,6 @@
 [submodule "fzcmd"]
 	path = fzcmd
 	url = https://gitlab.com/TheZoq2/fzcmd.git
+[submodule "waveform"]
+	path = waveform
+	url = https://github.com/ekiwi/waveform-rust.git
