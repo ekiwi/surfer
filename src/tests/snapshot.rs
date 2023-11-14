@@ -17,7 +17,7 @@ use test_log::test;
 
 use crate::{
     clock_highlighting::ClockHighlightType,
-    wave_container::{FieldRef, ModuleRef},
+    wave_container::{FieldRef, ScopeName},
     Message, StartupParams, State, WaveSource,
 };
 
@@ -291,8 +291,8 @@ snapshot_ui! {example_vcd_renders, || {
 
     state.update(Message::ToggleMenu);
     state.update(Message::ToggleSidePanel);
-    state.update(Message::AddModule(ModuleRef::from_strs(&["tb"])));
-    state.update(Message::AddModule(ModuleRef::from_strs(&["tb", "dut"])));
+    state.update(Message::AddModule(ScopeName::from_strs(&["tb"])));
+    state.update(Message::AddModule(ScopeName::from_strs(&["tb", "dut"])));
 
     state
 }}
@@ -307,7 +307,7 @@ snapshot_empty_state_with_msgs! {
 }
 
 snapshot_ui_with_file_msgs! {top_level_signals_have_no_aliasing, "examples/picorv32.vcd", [
-    Message::AddModule(ModuleRef::from_strs(&["testbench"]))
+    Message::AddModule(ScopeName::from_strs(&["testbench"]))
 ]}
 
 snapshot_ui! {resizing_the_canvas_redraws, || {
@@ -324,7 +324,7 @@ snapshot_ui! {resizing_the_canvas_redraws, || {
         }
     }
 
-    state.update(Message::AddModule(ModuleRef::from_strs(&["tb"])));
+    state.update(Message::AddModule(ScopeName::from_strs(&["tb"])));
     state.update(Message::CursorSet(100u32.to_bigint()));
 
     // Render the UI once with the sidebar shown
@@ -350,25 +350,25 @@ snapshot_ui! {resizing_the_canvas_redraws, || {
 }}
 
 snapshot_ui_with_file_msgs! {clock_pulses_render_line, "examples/counter.vcd", [
-    Message::AddModule(ModuleRef::from_strs(&["tb"])),
+    Message::AddModule(ScopeName::from_strs(&["tb"])),
     Message::SignalFormatChange(FieldRef::from_strs(&["tb", "clk"], &[]), String::from("Clock")),
     Message::SetClockHighlightType(ClockHighlightType::Line),
 ]}
 
 snapshot_ui_with_file_msgs! {clock_pulses_render_cycle, "examples/counter.vcd", [
-    Message::AddModule(ModuleRef::from_strs(&["tb"])),
+    Message::AddModule(ScopeName::from_strs(&["tb"])),
     Message::SignalFormatChange(FieldRef::from_strs(&["tb", "clk"], &[]), String::from("Clock")),
     Message::SetClockHighlightType(ClockHighlightType::Cycle),
 ]}
 
 snapshot_ui_with_file_msgs! {clock_pulses_render_none, "examples/counter.vcd", [
-    Message::AddModule(ModuleRef::from_strs(&["tb"])),
+    Message::AddModule(ScopeName::from_strs(&["tb"])),
     Message::SignalFormatChange(FieldRef::from_strs(&["tb", "clk"], &[]), String::from("Clock")),
     Message::SetClockHighlightType(ClockHighlightType::None),
 ]}
 
 snapshot_ui_with_file_msgs! {vertical_scrolling_works, "examples/picorv32.vcd", [
-    Message::AddModule(ModuleRef::from_strs(&["testbench", "top", "mem"])),
+    Message::AddModule(ScopeName::from_strs(&["testbench", "top", "mem"])),
     Message::VerticalScroll(crate::MoveDir::Down, 5),
     Message::VerticalScroll(crate::MoveDir::Up, 2),
 ]}

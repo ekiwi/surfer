@@ -6,7 +6,7 @@ use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 use itertools::Itertools;
 use regex::Regex;
 
-use crate::{message::Message, wave_container::SignalRef, State, WaveData};
+use crate::{message::Message, wave_container::VarName, State, WaveData};
 
 #[derive(Debug, PartialEq)]
 pub enum SignalFilterType {
@@ -120,7 +120,7 @@ pub fn filtered_signals(
     waves: &WaveData,
     filter: &str,
     signal_filter_type: &SignalFilterType,
-) -> Vec<SignalRef> {
+) -> Vec<VarName> {
     if let Some(scope) = &waves.active_module {
         let listed = waves
             .inner

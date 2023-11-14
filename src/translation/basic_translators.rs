@@ -1,15 +1,14 @@
 use super::{
     numeric_translators::NumericTranslator, BasicTranslator, TranslationPreference, ValueKind,
 };
-use crate::wave_container::SignalMeta;
 
 use color_eyre::Result;
-use fastwave_backend::SignalValue;
 use half::{bf16, f16};
 use itertools::Itertools;
-use num::Zero;
+use num::{BigUint, Zero};
 use softposit::{P16E1, P32E2, P8E0, Q16E1, Q8E0};
 use spade_common::num_ext::InfallibleToBigUint;
+use waveform::{SignalLength, SignalValue, Var};
 
 // Forms groups of n chars from from a string. If the string size is
 // not divisible by n, the first group will be smaller than n
@@ -158,30 +157,20 @@ fn map_to_radix(s: &String, radix: usize, num_bits: u64) -> (String, ValueKind) 
     )
 }
 
-fn check_single_wordlength(num_bits: Option<u32>, required: u32) -> Result<TranslationPreference> {
-    if let Some(num_bits) = num_bits {
-        if num_bits == required {
-            Ok(TranslationPreference::Yes)
-        } else {
-            Ok(TranslationPreference::No)
-        }
-    } else {
-        Ok(TranslationPreference::No)
+fn check_single_wordlength(len: SignalLength, required: u32) -> Result<TranslationPreference> {
+    match len {
+        SignalLength::Fixed(bits) if bits.get() == required => Ok(TranslationPreference::Yes),
+        _ => Ok(TranslationPreference::No),
     }
 }
 
 fn check_wordlength(
-    num_bits: Option<u32>,
+    len: SignalLength,
     required: impl FnOnce(u32) -> bool,
 ) -> Result<TranslationPreference> {
-    if let Some(num_bits) = num_bits {
-        if required(num_bits) {
-            Ok(TranslationPreference::Yes)
-        } else {
-            Ok(TranslationPreference::No)
-        }
-    } else {
-        Ok(TranslationPreference::No)
+    match len {
+        SignalLength::Fixed(bits) if required(bits.get()) => Ok(TranslationPreference::Yes),
+        _ => Ok(TranslationPreference::No),
     }
 }
 
@@ -194,10 +183,13 @@ impl BasicTranslator for HexTranslator {
 
     fn basic_translate(&self, num_bits: u64, value: &SignalValue) -> (String, ValueKind) {
         match value {
-            SignalValue::BigUint(v) => (
-                format!("{v:0width$x}", width = no_of_digits(num_bits, 4)),
-                ValueKind::Normal,
-            ),
+            SignalValue::Binary(bytes) => {
+                let v = BigUint::from_bytes_be(bytes);
+                (
+                    format!("{v:0width$x}", width = no_of_digits(num_bits, 4)),
+                    ValueKind::Normal,
+                )
+            },
             SignalValue::String(s) => map_to_radix(s, 4, num_bits),
         }
     }
@@ -224,13 +216,9 @@ impl BasicTranslator for BitTranslator {
         }
     }
 
-    fn translates(&self, signal: &SignalMeta) -> Result<TranslationPreference> {
-        if let Some(num_bits) = signal.num_bits {
-            if num_bits == 1u32 {
-                Ok(TranslationPreference::Prefer)
-            } else {
-                Ok(TranslationPreference::No)
-            }
+    fn translates(&self, var: &Var) -> Result<TranslationPreference> {
+        if var.is_1bit() {
+            Ok(TranslationPreference::Prefer)
         } else {
             Ok(TranslationPreference::No)
         }
@@ -380,8 +368,8 @@ impl NumericTranslator for SinglePrecisionTranslator {
         }
     }
 
-    fn translates(&self, signal: &SignalMeta) -> Result<TranslationPreference> {
-        check_single_wordlength(signal.num_bits, 32)
+    fn translates(&self, var: &Var) -> Result<TranslationPreference> {
+        check_single_wordlength(var.length(), 32)
     }
 }
 
@@ -397,8 +385,8 @@ impl NumericTranslator for DoublePrecisionTranslator {
             None => "Unknown".to_string(),
         }
     }
-    fn translates(&self, signal: &SignalMeta) -> Result<TranslationPreference> {
-        check_single_wordlength(signal.num_bits, 64)
+    fn translates(&self, var: &Var) -> Result<TranslationPreference> {
+        check_single_wordlength(var.length(), 64)
     }
 }
 
@@ -414,8 +402,8 @@ impl NumericTranslator for HalfPrecisionTranslator {
             None => "Unknown".to_string(),
         }
     }
-    fn translates(&self, signal: &SignalMeta) -> Result<TranslationPreference> {
-        check_single_wordlength(signal.num_bits, 16)
+    fn translates(&self, var: &Var) -> Result<TranslationPreference> {
+        check_single_wordlength(var.length(), 16)
     }
 }
 
@@ -431,8 +419,8 @@ impl NumericTranslator for BFloat16Translator {
             None => "Unknown".to_string(),
         }
     }
-    fn translates(&self, signal: &SignalMeta) -> Result<TranslationPreference> {
-        check_single_wordlength(signal.num_bits, 16)
+    fn translates(&self, var: &Var) -> Result<TranslationPreference> {
+        check_single_wordlength(var.length(), 16)
     }
 }
 
@@ -450,8 +438,8 @@ impl NumericTranslator for Posit32Translator {
         }
     }
 
-    fn translates(&self, signal: &SignalMeta) -> Result<TranslationPreference> {
-        check_single_wordlength(signal.num_bits, 32)
+    fn translates(&self, var: &Var) -> Result<TranslationPreference> {
+        check_single_wordlength(var.length(), 32)
     }
 }
 
@@ -469,8 +457,8 @@ impl NumericTranslator for Posit16Translator {
         }
     }
 
-    fn translates(&self, signal: &SignalMeta) -> Result<TranslationPreference> {
-        check_single_wordlength(signal.num_bits, 16)
+    fn translates(&self, var: &Var) -> Result<TranslationPreference> {
+        check_single_wordlength(var.length(), 16)
     }
 }
 
@@ -488,8 +476,8 @@ impl NumericTranslator for Posit8Translator {
         }
     }
 
-    fn translates(&self, signal: &SignalMeta) -> Result<TranslationPreference> {
-        check_single_wordlength(signal.num_bits, 8)
+    fn translates(&self, var: &Var) -> Result<TranslationPreference> {
+        check_single_wordlength(var.length(), 8)
     }
 }
 
@@ -507,8 +495,8 @@ impl NumericTranslator for PositQuire8Translator {
         }
     }
 
-    fn translates(&self, signal: &SignalMeta) -> Result<TranslationPreference> {
-        check_single_wordlength(signal.num_bits, 32)
+    fn translates(&self, var: &Var) -> Result<TranslationPreference> {
+        check_single_wordlength(var.length(), 32)
     }
 }
 
@@ -531,8 +519,8 @@ impl NumericTranslator for PositQuire16Translator {
         format!("{p}", p = Q16E1::from_bits(val))
     }
 
-    fn translates(&self, signal: &SignalMeta) -> Result<TranslationPreference> {
-        check_single_wordlength(signal.num_bits, 128)
+    fn translates(&self, var: &Var) -> Result<TranslationPreference> {
+        check_single_wordlength(var.length(), 128)
     }
 }
 
@@ -570,8 +558,8 @@ impl NumericTranslator for E5M2Translator {
         }
     }
 
-    fn translates(&self, signal: &SignalMeta) -> Result<TranslationPreference> {
-        check_single_wordlength(signal.num_bits, 8)
+    fn translates(&self, var: &Var) -> Result<TranslationPreference> {
+        check_single_wordlength(var.length(), 8)
     }
 }
 
@@ -605,8 +593,8 @@ impl NumericTranslator for E4M3Translator {
         }
     }
 
-    fn translates(&self, signal: &SignalMeta) -> Result<TranslationPreference> {
-        check_single_wordlength(signal.num_bits, 8)
+    fn translates(&self, var: &Var) -> Result<TranslationPreference> {
+        check_single_wordlength(var.length(), 8)
     }
 }
 
@@ -632,8 +620,8 @@ impl BasicTranslator for RiscvTranslator {
         }
     }
 
-    fn translates(&self, signal: &SignalMeta) -> Result<TranslationPreference> {
-        check_single_wordlength(signal.num_bits, 32)
+    fn translates(&self, var: &Var) -> Result<TranslationPreference> {
+        check_single_wordlength(var.length(), 32)
     }
 }
 
@@ -731,8 +719,8 @@ impl BasicTranslator for LebTranslator {
         }
     }
 
-    fn translates(&self, signal: &SignalMeta) -> Result<TranslationPreference> {
-        check_wordlength(signal.num_bits, |n| (n % 8 == 0) && n > 0)
+    fn translates(&self, var: &Var) -> Result<TranslationPreference> {
+        check_wordlength(var.length(), |n| (n % 8 == 0) && n > 0)
     }
 }
 

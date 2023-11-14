@@ -119,7 +119,7 @@ impl State {
                     .cursors
                     .get(&drawing_info.idx)
                     .unwrap_or(&BigInt::from(0)),
-                &waves.inner.metadata(),
+                &waves.waveform.hierarchy().,
                 &self.wanted_timescale,
             );
 

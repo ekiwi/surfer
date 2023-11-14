@@ -5,14 +5,14 @@ use eframe::{
     egui::DroppedFile,
     epaint::{Pos2, Vec2},
 };
-use fastwave_backend::Timescale;
+use waveform::{TimescaleUnit, Waveform};
 use num::BigInt;
 
 use crate::{
     clock_highlighting::ClockHighlightType,
     signal_name_type::SignalNameType,
     translation::Translator,
-    wave_container::{FieldRef, ModuleRef, SignalRef, WaveContainer},
+    wave_container::{FieldRef, ScopeName, VarName},
     wave_source::OpenMode,
     CommandCount, MoveDir, SignalFilterType, WaveSource,
 };
@@ -20,9 +20,9 @@ use crate::{
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub enum Message {
-    SetActiveScope(ModuleRef),
-    AddSignal(SignalRef),
-    AddModule(ModuleRef),
+    SetActiveScope(ScopeName),
+    AddSignal(VarName),
+    AddModule(ScopeName),
     AddCount(char),
     InvalidateCount,
     RemoveItem(usize, CommandCount),
@@ -57,12 +57,12 @@ pub enum Message {
     CursorSet(BigInt),
     LoadVcd(Utf8PathBuf),
     LoadVcdFromUrl(String),
-    WavesLoaded(WaveSource, Box<WaveContainer>, bool),
+    WavesLoaded(WaveSource, Box<Waveform>, bool),
     Error(color_eyre::eyre::Error),
     TranslatorLoaded(#[derivative(Debug = "ignore")] Box<dyn Translator + Send>),
     /// Take note that the specified translator errored on a `translates` call on the
     /// specified signal
-    BlacklistTranslator(SignalRef, String),
+    BlacklistTranslator(VarName, String),
     ToggleSidePanel,
     ShowCommandPrompt(bool),
     FileDropped(DroppedFile),
@@ -73,7 +73,7 @@ pub enum Message {
     GoToStart,
     GoToEnd,
     ToggleMenu,
-    SetTimeScale(Timescale),
+    SetTimeScale(TimescaleUnit),
     CommandPromptClear,
     CommandPromptUpdate {
         expanded: String,

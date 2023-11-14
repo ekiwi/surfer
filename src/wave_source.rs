@@ -1,27 +1,19 @@
-use std::{
-    collections::VecDeque,
-    fs::File,
-    io::Read,
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
-};
+use std::io::Read;
+use std::sync::atomic::AtomicU64;
+use std::sync::Arc;
 
 use crate::wasm_util::perform_work;
 use camino::Utf8PathBuf;
 use color_eyre::eyre::{anyhow, WrapErr};
 use color_eyre::Result;
 use eframe::egui::{self, DroppedFile};
-use fastwave_backend::parse_vcd;
 use futures_util::FutureExt;
 use futures_util::TryFutureExt;
 use log::info;
-use progress_streams::ProgressReader;
 #[cfg(not(target_arch = "wasm32"))]
 use rfd::FileDialog;
 
-use crate::{message::Message, wave_container::WaveContainer, State};
+use crate::{message::Message, State};
 
 #[derive(Debug)]
 pub enum WaveSource {
@@ -58,23 +50,26 @@ impl State {
         vcd_filename: Utf8PathBuf,
         keep_signals: bool,
     ) -> Result<()> {
-        // We'll open the file to check if it exists here to panic the main thread if not.
-        // Then we pass the file into the thread for parsing
         info!("Load VCD: {vcd_filename}");
-        let file =
-            File::open(&vcd_filename).with_context(|| format!("Failed to open {vcd_filename}"))?;
-        let total_bytes = file
-            .metadata()
-            .map(|m| m.len())
-            .map_err(|e| info!("Failed to get vcd file metadata {e}"))
-            .ok();
+        let source = WaveSource::File(vcd_filename);
+        let sender = self.msg_sender.clone();
 
-        self.load_vcd(
-            WaveSource::File(vcd_filename),
-            file,
-            total_bytes,
-            keep_signals,
-        );
+        perform_work(move || {
+            let result = waveform::vcd::read(vcd_filename.as_str())
+                .map_err(|e| anyhow!("{e:?}"))
+                .with_context(|| format!("Failed to parse VCD file: {source}"));
+
+            match result {
+                Ok(waves) => sender
+                    .send(Message::WavesLoaded(
+                        source,
+                        Box::new(waves),
+                        keep_signals,
+                    ))
+                    .unwrap(),
+                Err(e) => sender.send(Message::Error(e)).unwrap(),
+            }
+        });
 
         Ok(())
     }
@@ -89,9 +84,9 @@ impl State {
 
         let total_bytes = bytes.len();
 
-        self.load_vcd(
+        self.load_vcd_from_bytes(
             WaveSource::DragAndDrop(filename),
-            VecDeque::from_iter(bytes.into_iter().cloned()),
+            &bytes,
             Some(total_bytes as u64),
             keep_signals,
         );
@@ -124,35 +119,37 @@ impl State {
         self.vcd_progress = Some(LoadProgress::Downloading(url_))
     }
 
-    pub fn load_vcd(
+    pub fn load_vcd_from_bytes(
         &mut self,
         source: WaveSource,
-        reader: impl Read + Send + 'static,
+        bytes: &[u8],
         total_bytes: Option<u64>,
         keep_signals: bool,
     ) {
         // Progress tracking in bytes
         let progress_bytes = Arc::new(AtomicU64::new(0));
-        let reader = {
-            info!("Creating progress reader");
-            let progress_bytes = progress_bytes.clone();
-            ProgressReader::new(reader, move |progress: usize| {
-                progress_bytes.fetch_add(progress as u64, Ordering::SeqCst);
-            })
-        };
+        // TODO: re-enable progress tracking with new waveform backend.
+
+        // let reader = {
+        //     info!("Creating progress reader");
+        //     let progress_bytes = progress_bytes.clone();
+        //     ProgressReader::new(reader, move |progress: usize| {
+        //         progress_bytes.fetch_add(progress as u64, Ordering::SeqCst);
+        //     })
+        // };
 
         let sender = self.msg_sender.clone();
 
         perform_work(move || {
-            let result = parse_vcd(reader)
-                .map_err(|e| anyhow!("{e}"))
+            let result = waveform::vcd::read_from_bytes(bytes)
+                .map_err(|e| anyhow!("{e:?}"))
                 .with_context(|| format!("Failed to parse VCD file: {source}"));
 
             match result {
                 Ok(waves) => sender
                     .send(Message::WavesLoaded(
                         source,
-                        Box::new(WaveContainer::new_vcd(waves)),
+                        Box::new(waves),
                         keep_signals,
                     ))
                     .unwrap(),

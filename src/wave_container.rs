@@ -1,13 +1,8 @@
-use color_eyre::{eyre::Context, Result};
-use fastwave_backend::{Metadata, SignalValue, VCD};
-use num::BigUint;
-
-use crate::fast_wave_container::FastWaveContainer;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct ModuleRef(Vec<String>);
+pub struct ScopeName(Vec<String>);
 
-impl ModuleRef {
+impl ScopeName {
     pub fn from_strs(s: &[&str]) -> Self {
         Self(s.iter().map(|s| s.to_string()).collect())
     }
@@ -17,9 +12,9 @@ impl ModuleRef {
         Self(s.split('.').map(|x| x.to_string()).collect())
     }
 
-    pub fn with_submodule(&self, submodule: String) -> Self {
+    pub fn with_subscope(&self, subscope: String) -> Self {
         let mut result = self.clone();
-        result.0.push(submodule);
+        result.0.push(subscope);
         result
     }
 
@@ -28,7 +23,7 @@ impl ModuleRef {
     }
 }
 
-impl std::fmt::Display for ModuleRef {
+impl std::fmt::Display for ScopeName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", &self.0.join("."))
     }
@@ -36,15 +31,15 @@ impl std::fmt::Display for ModuleRef {
 
 // FIXME: We'll be cloning these quite a bit, I wonder if a `Cow<&str>` or Rc/Arc would be better
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct SignalRef {
+pub struct VarName {
     /// Path in the module hierarchy to where this signal resides
-    pub path: ModuleRef,
+    pub path: ScopeName,
     /// Name of the signal in its hierarchy
     pub name: String,
 }
 
-impl SignalRef {
-    pub fn new(path: ModuleRef, name: String) -> Self {
+impl VarName {
+    pub fn new(path: ScopeName, name: String) -> Self {
         Self { path, name }
     }
 
@@ -53,12 +48,12 @@ impl SignalRef {
 
         if components.is_empty() {
             Self {
-                path: ModuleRef(vec![]),
+                path: ScopeName(vec![]),
                 name: String::new(),
             }
         } else {
             Self {
-                path: ModuleRef(components[..(components.len()) - 1].to_vec()),
+                path: ScopeName(components[..(components.len()) - 1].to_vec()),
                 name: components.last().unwrap().to_string(),
             }
         }
@@ -85,7 +80,7 @@ impl SignalRef {
     #[cfg(test)]
     pub fn from_strs(s: &[&str]) -> Self {
         Self {
-            path: ModuleRef::from_strs(&s[..(s.len() - 1)]),
+            path: ScopeName::from_strs(&s[..(s.len() - 1)]),
             name: s
                 .last()
                 .expect("from_strs called with an empty string")
@@ -98,12 +93,12 @@ impl SignalRef {
 /// are the recursive path to the fields inside the (translated) root
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct FieldRef {
-    pub root: SignalRef,
+    pub root: VarName,
     pub field: Vec<String>,
 }
 
 impl FieldRef {
-    pub fn without_fields(root: SignalRef) -> Self {
+    pub fn without_fields(root: VarName) -> Self {
         Self {
             root,
             field: vec![],
@@ -113,115 +108,8 @@ impl FieldRef {
     #[cfg(test)]
     pub fn from_strs(root: &[&str], field: &[&str]) -> Self {
         Self {
-            root: SignalRef::from_strs(root),
+            root: VarName::from_strs(root),
             field: field.into_iter().map(|s| s.to_string()).collect(),
         }
     }
-}
-
-#[derive(Debug)]
-pub enum WaveContainer {
-    Fwb(FastWaveContainer),
-}
-
-impl WaveContainer {
-    pub fn new_vcd(vcd: VCD) -> Self {
-        WaveContainer::Fwb(FastWaveContainer::new(vcd))
-    }
-
-    pub fn signals(&self) -> &Vec<SignalRef> {
-        match self {
-            WaveContainer::Fwb(f) => f.signals(),
-        }
-    }
-
-    pub fn signals_in_module(&self, module: &ModuleRef) -> Vec<SignalRef> {
-        match self {
-            WaveContainer::Fwb(f) => f.signals_in_module(module),
-        }
-    }
-
-    pub fn signal_meta<'a>(&'a self, r: &'a SignalRef) -> Result<SignalMeta> {
-        match self {
-            WaveContainer::Fwb(f) => {
-                f.fwb_signal(r)
-                    .context("When getting signal metadata")
-                    .map(|signal| SignalMeta {
-                        sig: r,
-                        num_bits: signal.num_bits(),
-                        signal_type: signal.signal_type().cloned(),
-                    })
-            }
-        }
-    }
-
-    pub fn query_signal(
-        &self,
-        signal: &SignalRef,
-        time: &BigUint,
-    ) -> Result<Option<(BigUint, SignalValue)>> {
-        match self {
-            WaveContainer::Fwb(f) => f.query_signal(signal, time),
-        }
-    }
-
-    pub fn signal_exists(&self, signal: &SignalRef) -> bool {
-        match self {
-            WaveContainer::Fwb(f) => f.signal_exists(signal),
-        }
-    }
-
-    pub fn modules(&self) -> Vec<ModuleRef> {
-        match self {
-            WaveContainer::Fwb(f) => f.modules(),
-        }
-    }
-
-    pub fn has_module(&self, module: &ModuleRef) -> bool {
-        match self {
-            WaveContainer::Fwb(f) => f.module_map.contains_key(module),
-        }
-    }
-
-    // FIXME: Do not return FWB type
-    pub fn metadata(&self) -> Metadata {
-        match self {
-            WaveContainer::Fwb(f) => Metadata {
-                date: f.inner.metadata.date,
-                version: f.inner.metadata.version.clone(),
-                timescale: f.inner.metadata.timescale,
-            },
-        }
-    }
-
-    pub fn root_modules(&self) -> Vec<ModuleRef> {
-        match self {
-            WaveContainer::Fwb(f) => f.root_modules(),
-        }
-    }
-
-    pub fn child_modules(&self, module: &ModuleRef) -> Result<Vec<ModuleRef>> {
-        match self {
-            WaveContainer::Fwb(f) => f.child_modules(module),
-        }
-    }
-
-    pub fn max_timestamp(&self) -> Option<BigUint> {
-        match self {
-            WaveContainer::Fwb(f) => f.inner.max_timestamp().clone(),
-        }
-    }
-
-    pub fn module_exists(&self, module: &ModuleRef) -> bool {
-        match self {
-            WaveContainer::Fwb(f) => f.module_exists(module),
-        }
-    }
-}
-
-pub struct SignalMeta<'a> {
-    pub sig: &'a SignalRef,
-    pub num_bits: Option<u32>,
-    // FIXME: Replace with our own abstracted version
-    pub signal_type: Option<fastwave_backend::SignalType>,
 }

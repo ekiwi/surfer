@@ -1,7 +1,6 @@
 use color_eyre::eyre::anyhow;
-use fastwave_backend::SignalValue;
+use waveform::{Hierarchy, SignalValue, Var};
 
-use crate::wave_container::SignalMeta;
 
 use super::{BasicTranslator, BitTranslator, SignalInfo, Translator};
 
@@ -25,11 +24,10 @@ impl Translator for ClockTranslator {
 
     fn translate(
         &self,
-        signal: &SignalMeta,
-        value: &SignalValue,
+        hierarchy: &Hierarchy, var: &Var, value: &SignalValue
     ) -> color_eyre::Result<super::TranslationResult> {
-        if signal.num_bits == Some(1) {
-            self.inner.translate(signal, value)
+        if var.is_1bit() {
+            self.inner.translate(hierarchy, var, value)
         } else {
             Err(anyhow!(
                 "Clock translator translates a signal which is not 1 bit wide"
@@ -37,12 +35,12 @@ impl Translator for ClockTranslator {
         }
     }
 
-    fn signal_info(&self, _signal: &SignalMeta) -> color_eyre::Result<super::SignalInfo> {
+    fn signal_info(&self, _hierarchy: &Hierarchy, _var: &Var) -> color_eyre::Result<super::SignalInfo> {
         Ok(SignalInfo::Clock)
     }
 
-    fn translates(&self, signal: &SignalMeta) -> color_eyre::Result<super::TranslationPreference> {
-        if signal.num_bits == Some(1) {
+    fn translates(&self, _hierarchy: &Hierarchy, var: &Var) -> color_eyre::Result<super::TranslationPreference> {
+        if var.is_1bit() {
             Ok(super::TranslationPreference::Yes)
         } else {
             Ok(super::TranslationPreference::No)

@@ -14,7 +14,7 @@ use crate::help::{draw_about_window, draw_control_help_window};
 use crate::signal_filter::filtered_signals;
 use crate::time::{time_string, timescale_menu};
 use crate::util::uint_idx_to_alpha_idx;
-use crate::wave_container::{FieldRef, ModuleRef};
+use crate::wave_container::{FieldRef, ScopeName};
 use crate::wave_source::draw_progress_panel;
 use crate::{
     command_prompt::show_command_prompt, translation::SignalInfo, Message, MoveDir, State, WaveData,
@@ -380,7 +380,7 @@ impl State {
         &self,
         msgs: &mut Vec<Message>,
         wave: &WaveData,
-        module: &ModuleRef,
+        module: &ScopeName,
         ui: &mut egui::Ui,
     ) {
         let name = module.name();
@@ -429,7 +429,7 @@ impl State {
         &self,
         msgs: &mut Vec<Message>,
         wave: &WaveData,
-        root_module: &ModuleRef,
+        root_module: &ScopeName,
         ui: &mut egui::Ui,
     ) {
         let Some(child_modules) = wave

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use camino::Utf8Path;
 use eframe::epaint::Color32;
-use fastwave_backend::SignalValue;
+use waveform::{Hierarchy, SignalValue, Var};
 use num::ToPrimitive;
 use serde::Deserialize;
 use spade::compiler_state::CompilerState;
@@ -17,8 +17,6 @@ use spade_common::{
 };
 use spade_hir_lowering::MirLowerable;
 use spade_types::{ConcreteType, PrimitiveType};
-
-use crate::wave_container::SignalMeta;
 
 use super::{
     SignalInfo, TranslationPreference, TranslationResult, Translator, ValueKind, ValueRepr,
@@ -59,10 +57,10 @@ impl Translator for SpadeTranslator {
         "spade".to_string()
     }
 
-    fn translate(&self, signal: &SignalMeta, value: &SignalValue) -> Result<TranslationResult> {
+    fn translate(&self, var: &Var, value: &SignalValue, hierarchy: &Hierarchy) -> Result<TranslationResult> {
         let ty = self
             .state
-            .type_of_hierarchical_value(&self.top, &signal.sig.full_path()[1..])?;
+            .type_of_hierarchical_value(&self.top, var.full_name(hierarchy))?;
 
         let val_vcd_raw = match value {
             SignalValue::BigUint(v) => format!("{v:b}"),
@@ -90,27 +88,29 @@ impl Translator for SpadeTranslator {
         translate_concrete(&val_vcd, &ty, &mut false)
     }
 
-    fn signal_info(&self, signal: &SignalMeta) -> Result<SignalInfo> {
-        let ty = self
-            .state
-            .type_of_hierarchical_value(&self.top, &signal.sig.full_path()[1..])?;
-
-        info_from_concrete(&ty)
+    fn signal_info(&self, hierarchy: &Hierarchy, var: &Var) -> Result<SignalInfo> {
+        todo!()
+        // let ty = self
+        //     .state
+        //     .type_of_hierarchical_value(&self.top, &signal.sig.full_path()[1..])?;
+        //
+        // info_from_concrete(&ty)
     }
 
-    fn translates(&self, signal: &SignalMeta) -> Result<TranslationPreference> {
-        let ty = self
-            .state
-            .type_of_hierarchical_value(&self.top, &signal.sig.full_path()[1..])?;
-
-        match ty {
-            ConcreteType::Single {
-                base: PrimitiveType::Clock,
-                params: _,
-            } => Ok(TranslationPreference::Prefer),
-            ConcreteType::Single { base: _, params: _ } => Ok(TranslationPreference::No),
-            _ => Ok(TranslationPreference::Prefer),
-        }
+    fn translates(&self, hierarchy: &Hierarchy, var: &Var) -> Result<TranslationPreference> {
+        todo!()
+        // let ty = self
+        //     .state
+        //     .type_of_hierarchical_value(&self.top, &signal.sig.full_path()[1..])?;
+        //
+        // match ty {
+        //     ConcreteType::Single {
+        //         base: PrimitiveType::Clock,
+        //         params: _,
+        //     } => Ok(TranslationPreference::Prefer),
+        //     ConcreteType::Single { base: _, params: _ } => Ok(TranslationPreference::No),
+        //     _ => Ok(TranslationPreference::Prefer),
+        // }
     }
 }
 

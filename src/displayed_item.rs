@@ -3,7 +3,7 @@ use log::warn;
 
 use crate::{
     message::Message, signal_name_type::SignalNameType, translation::SignalInfo,
-    wave_container::SignalRef, State,
+    wave_container::VarName, State,
 };
 
 pub enum DisplayedItem {
@@ -13,7 +13,7 @@ pub enum DisplayedItem {
 }
 
 pub struct DisplayedSignal {
-    pub signal_ref: SignalRef,
+    pub signal_ref: VarName,
     pub info: SignalInfo,
     pub color: Option<String>,
     pub background_color: Option<String>,

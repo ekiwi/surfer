@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use color_eyre::Result;
 use eframe::epaint::Color32;
-use fastwave_backend::{SignalType, SignalValue};
+use waveform::{SignalValue, Var, Hierarchy, SignalLength};
 
 mod basic_translators;
 pub mod clock;
@@ -13,7 +13,7 @@ pub use basic_translators::*;
 use itertools::Itertools;
 use num::BigUint;
 
-use crate::wave_container::{FieldRef, SignalMeta};
+use crate::wave_container::FieldRef;
 
 pub fn all_translators() -> TranslatorList {
     TranslatorList::new(
@@ -97,9 +97,9 @@ impl TranslatorList {
         self.inner.insert(t.name(), t);
     }
 
-    pub fn is_valid_translator(&self, meta: &SignalMeta, candidate: &str) -> bool {
+    pub fn is_valid_translator(&self, hierarchy: &Hierarchy, var: &Var, candidate: &str) -> bool {
         self.get_translator(candidate)
-            .translates(meta)
+            .translates(hierarchy, var)
             .map(|preference| preference != TranslationPreference::No)
             .unwrap_or(false)
     }
@@ -211,7 +211,7 @@ impl TranslationResult {
 
                 let result = subtranslator
                     .as_ref()
-                    .basic_translate(1, &SignalValue::String(val.to_string()));
+                    .basic_translate(1, &SignalValue::String(&val.to_string()));
 
                 Some(result)
             }
@@ -224,7 +224,7 @@ impl TranslationResult {
 
                 let result = subtranslator
                     .as_ref()
-                    .basic_translate(*bit_count, &SignalValue::String(bits.clone()));
+                    .basic_translate(*bit_count, &SignalValue::String(bits));
 
                 Some(result)
             }
@@ -354,32 +354,29 @@ pub enum TranslationPreference {
     No,
 }
 
-pub fn translates_all_bit_types(signal: &SignalMeta) -> Result<TranslationPreference> {
-    if signal.signal_type == Some(SignalType::Str)
-        || signal.signal_type == Some(SignalType::Real)
-        || signal.signal_type == Some(SignalType::RealTime)
-    {
-        Ok(TranslationPreference::No)
-    } else {
+pub fn translates_all_bit_types(var: &Var) -> Result<TranslationPreference> {
+    if var.is_bit_vector() {
         Ok(TranslationPreference::Yes)
+    } else {
+        Ok(TranslationPreference::No)
     }
 }
 
 pub trait Translator {
     fn name(&self) -> String;
 
-    fn translate(&self, signal: &SignalMeta, value: &SignalValue) -> Result<TranslationResult>;
+    fn translate(&self, hierarchy: &Hierarchy, var: &Var, value: &SignalValue) -> Result<TranslationResult>;
 
-    fn signal_info(&self, signal: &SignalMeta) -> Result<SignalInfo>;
+    fn signal_info(&self, hierarchy: &Hierarchy, var: &Var) -> Result<SignalInfo>;
 
-    fn translates(&self, signal: &SignalMeta) -> Result<TranslationPreference>;
+    fn translates(&self, hierarchy: &Hierarchy, var: &Var) -> Result<TranslationPreference>;
 }
 
 pub trait BasicTranslator {
     fn name(&self) -> String;
     fn basic_translate(&self, num_bits: u64, value: &SignalValue) -> (String, ValueKind);
-    fn translates(&self, signal: &SignalMeta) -> Result<TranslationPreference> {
-        translates_all_bit_types(signal)
+    fn translates(&self, var: &Var) -> Result<TranslationPreference> {
+        translates_all_bit_types(var)
     }
 }
 
@@ -388,10 +385,15 @@ impl Translator for Box<dyn BasicTranslator> {
         self.as_ref().name()
     }
 
-    fn translate(&self, signal: &SignalMeta, value: &SignalValue) -> Result<TranslationResult> {
+    fn translate(&self, hierarchy: &Hierarchy, var: &Var, value: &SignalValue) -> Result<TranslationResult> {
+        let num_bits = match var.length() {
+            SignalLength::Variable => 0,
+            SignalLength::Fixed(len) => len.get(),
+        } as u64;
+
         let (val, color) = self
             .as_ref()
-            .basic_translate(signal.num_bits.unwrap_or(0) as u64, value);
+            .basic_translate(num_bits, value);
         Ok(TranslationResult {
             val: ValueRepr::String(val),
             color,
@@ -400,16 +402,16 @@ impl Translator for Box<dyn BasicTranslator> {
         })
     }
 
-    fn signal_info(&self, signal: &SignalMeta) -> Result<SignalInfo> {
-        if signal.num_bits == Some(1) {
+    fn signal_info(&self, hierarchy: &Hierarchy, var: &Var) -> Result<SignalInfo> {
+        if var.is_1bit() {
             Ok(SignalInfo::Bool)
         } else {
             Ok(SignalInfo::Bits)
         }
     }
 
-    fn translates(&self, signal: &SignalMeta) -> Result<TranslationPreference> {
-        self.as_ref().translates(signal)
+    fn translates(&self, hierarchy: &Hierarchy, var: &Var) -> Result<TranslationPreference> {
+        self.as_ref().translates(var)
     }
 }
 
@@ -420,9 +422,9 @@ impl Translator for StringTranslator {
         "String".to_string()
     }
 
-    fn translate(&self, _signal: &SignalMeta, value: &SignalValue) -> Result<TranslationResult> {
+    fn translate(&self, _hierarchy: &Hierarchy, _var: &Var, value: &SignalValue) -> Result<TranslationResult> {
         match value {
-            SignalValue::BigUint(_) => panic!(),
+            SignalValue::Binary(_) => panic!(),
             SignalValue::String(s) => Ok(TranslationResult {
                 val: ValueRepr::String((*s).to_string()),
                 color: ValueKind::Normal,
@@ -432,15 +434,12 @@ impl Translator for StringTranslator {
         }
     }
 
-    fn signal_info(&self, _signal: &SignalMeta) -> Result<SignalInfo> {
+    fn signal_info(&self, _hierarchy: &Hierarchy, _var: &Var) -> Result<SignalInfo> {
         Ok(SignalInfo::String)
     }
 
-    fn translates(&self, signal: &SignalMeta) -> Result<TranslationPreference> {
-        if signal.signal_type == Some(SignalType::Str)
-            || signal.signal_type == Some(SignalType::Real)
-            || signal.signal_type == Some(SignalType::RealTime)
-        {
+    fn translates(&self, _hierarchy: &Hierarchy, var: &Var) -> Result<TranslationPreference> {
+        if var.is_string() {
             Ok(TranslationPreference::Prefer)
         } else {
             Ok(TranslationPreference::No)

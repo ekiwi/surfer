@@ -7,7 +7,7 @@ use crate::{
     message::Message,
     signal_name_type::SignalNameType,
     util::{alpha_idx_to_uint_idx, uint_idx_to_alpha_idx},
-    wave_container::{ModuleRef, SignalRef},
+    wave_container::{ScopeName, VarName},
     State,
 };
 
@@ -37,21 +37,19 @@ pub fn get_parser(state: &State) -> Command<Message> {
         ))
     }
 
-    let modules = match &state.waves {
-        Some(v) => v
-            .inner
-            .modules()
-            .iter()
-            .map(|module| format!("{module}"))
+    let hierarchy = state.waves.map(|v| v.waveform.hierarchy());
+
+    let modules = match hierarchy {
+        Some(h) => h
+            .iter_scopes()
+            .map(|scope| scope.full_name(h))
             .collect(),
         None => vec![],
     };
-    let signals = match &state.waves {
-        Some(v) => v
-            .inner
-            .signals()
-            .iter()
-            .map(|s| s.full_path_string())
+    let signals = match hierarchy {
+        Some(h) => h
+            .iter_vars()
+            .map(|var| var.full_name(h))
             .collect(),
         None => vec![],
     };
@@ -78,10 +76,10 @@ pub fn get_parser(state: &State) -> Command<Message> {
         .waves
         .as_ref()
         .and_then(|waves| {
-            waves
-                .active_module
-                .as_ref()
-                .map(|scope| waves.inner.signals_in_module(scope))
+            match (waves.active_module, hierarchy) {
+                (Some(scope), Some(h)) => Some(scope.vars()),
+                _ => None
+            }
         })
         .unwrap_or_default();
 
@@ -188,7 +186,7 @@ pub fn get_parser(state: &State) -> Command<Message> {
                     modules,
                     Box::new(|word| {
                         Some(Command::Terminal(Message::AddModule(
-                            ModuleRef::from_hierarchy_string(word),
+                            ScopeName::from_hierarchy_string(word),
                         )))
                     }),
                 ),
@@ -196,7 +194,7 @@ pub fn get_parser(state: &State) -> Command<Message> {
                     modules.clone(),
                     Box::new(|word| {
                         Some(Command::Terminal(Message::SetActiveScope(
-                            ModuleRef::from_hierarchy_string(word),
+                            ScopeName::from_hierarchy_string(word),
                         )))
                     }),
                 ),
@@ -206,7 +204,7 @@ pub fn get_parser(state: &State) -> Command<Message> {
                     signals.clone(),
                     Box::new(|word| {
                         Some(Command::Terminal(Message::AddSignal(
-                            SignalRef::from_hierarchy_string(word),
+                            VarName::from_hierarchy_string(word),
                         )))
                     }),
                 ),
@@ -217,7 +215,7 @@ pub fn get_parser(state: &State) -> Command<Message> {
                         .collect(),
                     Box::new(move |name| {
                         active_module.as_ref().map(|module| {
-                            Command::Terminal(Message::AddSignal(SignalRef::new(
+                            Command::Terminal(Message::AddSignal(VarName::new(
                                 module.clone(),
                                 name.to_string(),
                             )))

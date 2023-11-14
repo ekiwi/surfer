@@ -5,7 +5,6 @@ mod commands;
 mod config;
 mod cursor;
 mod displayed_item;
-mod fast_wave_container;
 mod help;
 mod keys;
 mod menus;
@@ -25,7 +24,6 @@ mod wasm_util;
 mod wave_container;
 mod wave_source;
 
-use bytes::Buf;
 use camino::Utf8PathBuf;
 #[cfg(not(target_arch = "wasm32"))]
 use clap::Parser;
@@ -47,7 +45,7 @@ use eframe::epaint::Rect;
 use eframe::epaint::Rounding;
 use eframe::epaint::Stroke;
 use eframe::epaint::Vec2;
-use fastwave_backend::Timescale;
+use waveform::{Hierarchy, ScopeRef, Timescale, Var, Waveform};
 #[cfg(not(target_arch = "wasm32"))]
 use fern::colors::ColoredLevelConfig;
 use log::error;
@@ -69,10 +67,8 @@ use translation::TranslatorList;
 use viewport::Viewport;
 use wasm_util::perform_work;
 use wave_container::FieldRef;
-use wave_container::ModuleRef;
-use wave_container::SignalMeta;
-use wave_container::SignalRef;
-use wave_container::WaveContainer;
+use wave_container::ScopeName;
+use wave_container::VarName;
 use wave_source::LoadProgress;
 use wave_source::WaveSource;
 
@@ -228,9 +224,9 @@ fn main() -> Result<()> {
 }
 
 pub struct WaveData {
-    inner: WaveContainer,
+    waveform: Waveform,
     source: WaveSource,
-    active_module: Option<ModuleRef>,
+    active_module: Option<ScopeRef>,
     /// Root items (signals, dividers, ...) to display
     displayed_items: Vec<DisplayedItem>,
     viewport: Viewport,
@@ -247,7 +243,7 @@ pub struct WaveData {
 impl WaveData {
     pub fn update_with(
         mut self,
-        new_waves: Box<WaveContainer>,
+        new_waves: Box<Waveform>,
         source: WaveSource,
         num_timestamps: BigInt,
         wave_viewport: Viewport,
@@ -362,7 +358,7 @@ pub struct State {
     vcd_progress: Option<LoadProgress>,
 
     // Vector of translators which have failed at the `translates` function for a signal.
-    blacklisted_translators: HashSet<(SignalRef, String)>,
+    blacklisted_translators: HashSet<(VarName, String)>,
     /// Buffer for the command input
     command_prompt: command_prompt::CommandPrompt,
 
@@ -845,9 +841,9 @@ impl State {
             }
             Message::FileDownloaded(url, bytes, keep_signals) => {
                 let size = bytes.len() as u64;
-                self.load_vcd(
+                self.load_vcd_from_bytes(
                     WaveSource::Url(url),
-                    bytes.reader(),
+                    bytes.as_ref(),
                     Some(size),
                     keep_signals,
                 )
@@ -1100,13 +1096,14 @@ impl State {
 impl WaveData {
     pub fn select_preferred_translator(
         &self,
-        sig: SignalMeta,
+        hierarchy: &Hierarchy,
+        var: &Var,
         translators: &TranslatorList,
     ) -> String {
         translators
             .all_translators()
             .iter()
-            .filter_map(|t| match t.translates(&sig) {
+            .filter_map(|t| match t.translates(hierarchy, var) {
                 Ok(TranslationPreference::Prefer) => Some(t.name()),
                 Ok(TranslationPreference::Yes) => None,
                 Ok(TranslationPreference::No) => None,
@@ -1175,7 +1172,7 @@ impl WaveData {
         self.viewport.curr_right = target_right;
     }
 
-    pub fn add_signal(&mut self, translators: &TranslatorList, sig: &SignalRef) {
+    pub fn add_signal(&mut self, translators: &TranslatorList, sig: &VarName) {
         let Ok(meta) = self
             .inner
             .signal_meta(&sig)
